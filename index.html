@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+    }
+    body {
+        background-color: slategray;
+        background-image: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.5));
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        transition: background-color 0.2s ease;
+    }
+
+    .img-container {
+        position: relative;
+        height: 600px;
+        width: 600px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    img {
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        max-width: 500px;
+        max-height: 500px;
+        width: auto;
+        height: auto;
+        margin: 1rem;
+    }
+
+    .display {
+        display: grid;
+        gap: 1rem;
+        margin: 1rem;
+        width: 600px;
+        grid-template-columns: repeat(4, 1fr);
+        grid-auto-rows: 1fr;
+        min-height: 292px;
+    }
+
+    .display > div {
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+        aspect-ratio: 1;
+    }
+</style>
+
+<div class="img-container">
+    <img src="test.jpg" alt="" id="img">
+</div>
+
+<script type="module">
+    /**
+     * @type {HTMLImageElement}
+     */
+    const img = document.getElementById("img");
+    
+    const display = document.createElement("div");
+    display.className = "display";
+    document.body.appendChild(display);
+
+    document.body.addEventListener('drop', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const file = e.dataTransfer.files[0];
+        const reader = new FileReader();
+        display.innerHTML = "";
+        reader.onload = async () => {
+            img.src = reader.result;
+            quantize(img);
+        };
+        reader.readAsDataURL(file);
+    });
+
+    document.body.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    async function quantize(img) {
+        //wait for image to load
+        img.complete || await new Promise(resolve => img.onload = resolve);
+
+        //create a canvas to draw the image on
+        const canvas = document.createElement("canvas");
+
+        //limit the size of the canvas to a maximum of 500x500, and scale the image to fit proportionately
+        const scale = Math.min(500 / img.width, 500 / img.height);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+
+        const ctx = canvas.getContext("2d");
+
+        //draw the image on the canvas
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        //get the image data
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        //get the data array
+        const data = imageData.data;
+
+
+        let bestVariance = Infinity;
+
+        function onMessage(e) {
+            const [centroids, variance] = e.data;
+
+            if (variance < bestVariance) {
+                display.innerHTML = "";
+
+                centroids.map(([r, g, b]) => {
+                    const el = document.createElement("div");
+                    const color = '#' + [r, g, b].map(x => Math.round(x).toString(16).padStart(2, "0")).join("");
+                    el.style.backgroundColor = color;
+                    el.style.position = "relative";
+                    el.title = color;
+                    el.addEventListener('mouseenter', e => document.body.style.backgroundColor = color);
+                    el.addEventListener('mouseleave', e => document.body.style.backgroundColor = "");
+                    
+                    if (navigator.clipboard) {
+                        el.style.cursor = "pointer";
+                        el.addEventListener('click', e => {
+                            //rgb to hex conversion
+                            navigator.clipboard.writeText(color);
+                        });
+                    }
+                    return el;
+                }).forEach((el) => display.appendChild(el));
+            }
+        }
+
+        for (let i = 0; i < 8; i++) {
+            const worker = new Worker("worker.js");
+            worker.postMessage([8, data]);
+            worker.onmessage = onMessage;
+        }
+    }
+    
+
+    quantize(img);
+</script>
